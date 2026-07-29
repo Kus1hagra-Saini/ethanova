@@ -1,0 +1,40 @@
+# Ethanova editor configuration
+# https://editorconfig.org
+
+root = true
+
+# Defaults for all files
+[*]
+charset = utf-8
+end_of_line = lf
+insert_final_newline = true
+trim_trailing_whitespace = true
+indent_style = space
+indent_size = 4
+
+# Java
+[*.java]
+indent_size = 4
+max_line_length = 120
+
+# Python
+[*.py]
+indent_size = 4
+max_line_length = 100
+
+# XML, HTML, YAML, JSON — 2 spaces is convention
+[*.{xml,html,yml,yaml,json}]
+indent_size = 2
+
+# Markdown — preserve trailing whitespace (used for line breaks)
+[*.md]
+trim_trailing_whitespace = false
+indent_size = 2
+
+# Makefiles need actual tabs
+[Makefile]
+indent_style = tab
+
+# Windows batch files
+[*.{bat,cmd}]
+end_of_line = crlf

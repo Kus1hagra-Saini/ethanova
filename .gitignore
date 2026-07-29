@@ -1,0 +1,130 @@
+# ============================================================
+# Ethanova .gitignore
+# Covers: Java/Maven, Python, Docker, IDE, OS, Airflow, ML
+# ============================================================
+
+# ------------------------------------------------------------
+# 1. Java / Maven
+# ------------------------------------------------------------
+target/
+*.class
+*.jar
+*.war
+*.ear
+*.nar
+dependency-reduced-pom.xml
+buildNumber.properties
+.mvn/timing.properties
+.mvn/wrapper/maven-wrapper.jar
+
+# ------------------------------------------------------------
+# 2. Python
+# ------------------------------------------------------------
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+*.egg
+.eggs/
+.venv/
+venv/
+env/
+ENV/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+.coverage.*
+htmlcov/
+.tox/
+.nox/
+pip-log.txt
+pip-delete-this-directory.txt
+
+# ------------------------------------------------------------
+# 3. IDEs and editors
+# ------------------------------------------------------------
+.idea/
+*.iml
+*.ipr
+*.iws
+.vscode/
+!.vscode/settings.shared.json
+!.vscode/extensions.json
+.classpath
+.project
+.settings/
+.factorypath
+*.sublime-project
+*.sublime-workspace
+nbproject/private/
+nbbuild/
+nbdist/
+.nb-gradle/
+
+# ------------------------------------------------------------
+# 4. Environment and secrets
+# ------------------------------------------------------------
+.env
+.env.*
+!.env.example
+!.env.*.example
+*.pem
+*.key
+secrets/
+credentials/
+
+# ------------------------------------------------------------
+# 5. Operating system
+# ------------------------------------------------------------
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+Thumbs.db
+ehthumbs.db
+desktop.ini
+$RECYCLE.BIN/
+
+# ------------------------------------------------------------
+# 6. Project-specific
+# ------------------------------------------------------------
+
+# Airflow local state
+airflow.db
+airflow-webserver.pid
+airflow.cfg
+logs/
+plugins/__pycache__/
+
+# ML artefacts
+*.pkl
+*.joblib
+*.h5
+*.onnx
+models/checkpoints/
+mlruns/
+
+# Data files (never commit large data)
+*.csv
+*.parquet
+*.arrow
+data/raw/
+data/bronze/
+data/silver/
+data/gold/
+!data/**/.gitkeep
+!data/**/README.md
+
+# Docker
+.docker/
+docker-compose.override.yml
+
+# Logs
+*.log
+logs/
+
+# Local overrides
+*.local
+*.local.*

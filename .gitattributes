@@ -1,0 +1,135 @@
+# ============================================================
+# Ethanova .gitattributes
+# Enforces line endings and binary handling across all clones
+# ============================================================
+
+# ------------------------------------------------------------
+# 1. Default: auto-detect text, normalise to LF
+# ------------------------------------------------------------
+* text=auto eol=lf
+
+# ------------------------------------------------------------
+# 2. Explicit text files (safety net for auto-detection)
+# ------------------------------------------------------------
+*.java     text diff=java
+*.kt       text
+*.py       text diff=python
+*.sql      text
+*.md       text diff=markdown
+*.yml      text
+*.yaml     text
+*.json     text
+*.xml      text diff=html
+*.html     text diff=html
+*.css      text diff=css
+*.js       text
+*.ts       text
+*.tsx      text
+*.jsx      text
+*.txt      text
+*.properties text
+*.cfg      text
+*.ini      text
+*.toml     text
+*.conf     text
+
+# Dockerfiles and compose
+Dockerfile        text
+Dockerfile.*      text
+*.dockerfile      text
+docker-compose*   text
+.dockerignore     text
+
+# Git and editor config
+.gitignore        text
+.gitattributes    text
+.editorconfig     text
+
+# ------------------------------------------------------------
+# 3. Platform-specific script line endings
+# ------------------------------------------------------------
+# Shell scripts: LF always (they run inside Linux containers)
+*.sh       text eol=lf
+*.bash     text eol=lf
+
+# Windows batch and cmd: CRLF always
+*.bat      text eol=crlf
+*.cmd      text eol=crlf
+
+# PowerShell: LF (cross-platform-safe on modern PowerShell 7+)
+*.ps1      text eol=lf
+*.psm1     text eol=lf
+
+# ------------------------------------------------------------
+# 4. Binary files (never touch these)
+# ------------------------------------------------------------
+# Images
+*.png      binary
+*.jpg      binary
+*.jpeg     binary
+*.gif      binary
+*.ico      binary
+*.svg      text
+*.webp     binary
+
+# Documents and presentations
+*.pdf      binary
+*.docx     binary
+*.doc      binary
+*.pptx     binary
+*.ppt      binary
+*.xlsx     binary
+*.xls      binary
+
+# Power BI
+*.pbix     binary
+*.pbit     binary
+
+# Java compiled artefacts (also ignored by .gitignore but safe to declare)
+*.jar      binary
+*.war      binary
+*.class    binary
+
+# Python compiled artefacts
+*.pyc      binary
+*.pyd      binary
+*.pyo      binary
+
+# ML models
+*.pkl      binary
+*.joblib   binary
+*.h5       binary
+*.onnx     binary
+*.pt       binary
+*.pth      binary
+*.model    binary
+
+# Databases and archives
+*.db       binary
+*.sqlite   binary
+*.sqlite3  binary
+*.zip      binary
+*.tar      binary
+*.tar.gz   binary
+*.tgz      binary
+*.gz       binary
+*.7z       binary
+
+# Media
+*.mp3      binary
+*.mp4      binary
+*.mov      binary
+*.avi      binary
+*.wav      binary
+
+# Fonts
+*.woff     binary
+*.woff2    binary
+*.ttf      binary
+*.otf      binary
+*.eot      binary
+
+# ------------------------------------------------------------
+# 5. Language-aware diff (better readability on GitHub)
+# ------------------------------------------------------------
+# Handled inline in section 2 via 'diff=<language>' tokens
