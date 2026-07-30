@@ -1,0 +1,30 @@
+spring:
+  datasource:
+    url: jdbc:postgresql://localhost:5432/ethanova?currentSchema=operational
+    username: ethanova
+    password: ethanova_dev_pw
+    driver-class-name: org.postgresql.Driver
+    hikari:
+      pool-name: ethanova-hikari
+      maximum-pool-size: 10
+      minimum-idle: 2
+      connection-timeout: 20000
+      idle-timeout: 300000
+      max-lifetime: 1200000
+
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    properties:
+      hibernate:
+        default_schema: operational
+        format_sql: true
+        jdbc:
+          time_zone: UTC
+    show-sql: false
+    open-in-view: false
+
+logging:
+  level:
+    org.hibernate.SQL: INFO
+    org.springframework.jdbc.datasource.init: INFO
