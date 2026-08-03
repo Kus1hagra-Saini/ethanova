@@ -1,0 +1,35 @@
+spring:
+  datasource:
+    url: jdbc:postgresql://localhost:5432/ethanova?currentSchema=operational
+    username: ${POSTGRES_USER:ethanova}
+    password: ${POSTGRES_PASSWORD:ethanova_dev_pw}
+    driver-class-name: org.postgresql.Driver
+    hikari:
+      pool-name: ethanova-hikari
+      maximum-pool-size: 10
+      minimum-idle: 2
+
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    properties:
+      hibernate:
+        default_schema: operational
+        format_sql: true
+        jdbc:
+          time_zone: UTC
+    show-sql: false
+    open-in-view: false
+
+  flyway:
+    enabled: true
+    schemas: operational
+    default-schema: operational
+    locations: classpath:db/migration
+    baseline-on-migrate: true
+    validate-on-migrate: true
+
+logging:
+  level:
+    org.hibernate.SQL: INFO
+    org.flywaydb: INFO

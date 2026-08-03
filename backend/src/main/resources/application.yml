@@ -1,0 +1,26 @@
+spring:
+  application:
+    name: ethanova-backend
+
+  profiles:
+    active: local
+
+server:
+  port: 8080
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+  endpoint:
+    health:
+      show-details: when-authorized
+  info:
+    env:
+      enabled: true
+
+info:
+  app:
+    name: Ethanova Backend
+    description: Operational system for the E20 supply chain decision intelligence platform
