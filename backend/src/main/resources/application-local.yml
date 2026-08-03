@@ -1,16 +1,13 @@
 spring:
   datasource:
     url: jdbc:postgresql://localhost:5432/ethanova?currentSchema=operational
-    username: ethanova
-    password: ethanova_dev_pw
+    username: ${POSTGRES_USER:ethanova}
+    password: ${POSTGRES_PASSWORD:ethanova_dev_pw}
     driver-class-name: org.postgresql.Driver
     hikari:
       pool-name: ethanova-hikari
       maximum-pool-size: 10
       minimum-idle: 2
-      connection-timeout: 20000
-      idle-timeout: 300000
-      max-lifetime: 1200000
 
   jpa:
     hibernate:
@@ -24,7 +21,15 @@ spring:
     show-sql: false
     open-in-view: false
 
+  flyway:
+    enabled: true
+    schemas: operational
+    default-schema: operational
+    locations: classpath:db/migration
+    baseline-on-migrate: true
+    validate-on-migrate: true
+
 logging:
   level:
     org.hibernate.SQL: INFO
-    org.springframework.jdbc.datasource.init: INFO
+    org.flywaydb: INFO
