@@ -11,6 +11,8 @@ public interface SupplierRepository extends JpaRepository<Supplier, Long> {
 
     Optional<Supplier> findBySupplierCode(String supplierCode);
 
+    boolean existsBySupplierCode(String supplierCode);
+
     List<Supplier> findByStateCodeAndActiveTrue(String stateCode);
 
     List<Supplier> findBySupplierType(SupplierType supplierType);
