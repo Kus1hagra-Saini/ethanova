@@ -11,6 +11,8 @@ public interface DepotRepository extends JpaRepository<Depot, Long> {
 
     Optional<Depot> findByDepotCode(String depotCode);
 
+    boolean existsByDepotCode(String depotCode);
+
     List<Depot> findByStateCodeAndActiveTrue(String stateCode);
 
     List<Depot> findByOmcCode(String omcCode);
