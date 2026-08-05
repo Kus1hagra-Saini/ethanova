@@ -63,7 +63,27 @@ public class GlobalExceptionHandler {
                 fieldErrors);
         return ResponseEntity.badRequest().body(body);
     }
+    /**
+     * 400 — Path variable or query parameter cannot be converted to the target type.
+     * Most common cause: an invalid enum literal (e.g. /grade/FOO where FOO is not
+     * a valid {@code EthanolGrade}). Returned as a targeted 400 rather than 500.
+     */
+    @ExceptionHandler(org.springframework.web.method.annotation.MethodArgumentTypeMismatchException.class)
+    public ResponseEntity<ApiError> handleTypeMismatch(
+            org.springframework.web.method.annotation.MethodArgumentTypeMismatchException ex,
+            HttpServletRequest request) {
 
+        String requiredType = ex.getRequiredType() != null ? ex.getRequiredType().getSimpleName() : "unknown";
+        String message = "Parameter '%s' has invalid value '%s'; expected type %s"
+                .formatted(ex.getName(), ex.getValue(), requiredType);
+
+        ApiError body = ApiError.of(
+                HttpStatus.BAD_REQUEST.value(),
+                HttpStatus.BAD_REQUEST.getReasonPhrase(),
+                message,
+                request.getRequestURI());
+        return ResponseEntity.badRequest().body(body);
+    }
     /**
      * 409 — Database integrity violation (FK constraint, unique constraint).
      * Common when deleting a master-data row that has child references.
