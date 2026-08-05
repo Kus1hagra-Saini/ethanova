@@ -1,7 +1,14 @@
 package com.ethanova.backend.masterdata;
 
+import com.ethanova.backend.common.exception.ApiError;
 import com.ethanova.backend.masterdata.dto.DepotRequest;
 import com.ethanova.backend.masterdata.dto.DepotResponse;
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.media.Content;
+import io.swagger.v3.oas.annotations.media.Schema;
+import io.swagger.v3.oas.annotations.responses.ApiResponse;
+import io.swagger.v3.oas.annotations.responses.ApiResponses;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -32,6 +39,7 @@ import java.util.List;
  */
 @RestController
 @RequestMapping("/api/v1/depots")
+@Tag(name = "Depots", description = "OMC ethanol storage depots (IOCL, BPCL, HPCL)")
 public class DepotController {
 
     private final DepotService depotService;
@@ -41,16 +49,29 @@ public class DepotController {
     }
 
     @GetMapping
+    @Operation(summary = "List all depots")
     public List<DepotResponse> list() {
         return depotService.findAll();
     }
 
     @GetMapping("/{depotCode}")
+    @Operation(summary = "Get a depot by its business code")
+    @ApiResponses({
+            @ApiResponse(responseCode = "404", description = "Depot not found",
+                    content = @Content(schema = @Schema(implementation = ApiError.class)))
+    })
     public DepotResponse getByCode(@PathVariable String depotCode) {
         return depotService.findByCode(depotCode);
     }
 
     @PostMapping
+    @Operation(summary = "Create a new depot")
+    @ApiResponses({
+            @ApiResponse(responseCode = "400", description = "Validation failure on request body",
+                    content = @Content(schema = @Schema(implementation = ApiError.class))),
+            @ApiResponse(responseCode = "409", description = "depotCode already exists",
+                    content = @Content(schema = @Schema(implementation = ApiError.class)))
+    })
     public ResponseEntity<DepotResponse> create(@Valid @RequestBody DepotRequest request) {
         DepotResponse created = depotService.create(request);
 
@@ -64,6 +85,13 @@ public class DepotController {
     }
 
     @PutMapping("/{depotCode}")
+    @Operation(summary = "Update an existing depot (full replacement)")
+    @ApiResponses({
+            @ApiResponse(responseCode = "400", description = "Validation failure on request body",
+                    content = @Content(schema = @Schema(implementation = ApiError.class))),
+            @ApiResponse(responseCode = "404", description = "Depot not found",
+                    content = @Content(schema = @Schema(implementation = ApiError.class)))
+    })
     public DepotResponse update(
             @PathVariable String depotCode,
             @Valid @RequestBody DepotRequest request) {
@@ -72,6 +100,13 @@ public class DepotController {
 
     @DeleteMapping("/{depotCode}")
     @ResponseStatus(HttpStatus.NO_CONTENT)
+    @Operation(summary = "Delete a depot")
+    @ApiResponses({
+            @ApiResponse(responseCode = "404", description = "Depot not found",
+                    content = @Content(schema = @Schema(implementation = ApiError.class))),
+            @ApiResponse(responseCode = "409", description = "Depot is referenced by other records (e.g. inventory, dispatch orders)",
+                    content = @Content(schema = @Schema(implementation = ApiError.class)))
+    })
     public void delete(@PathVariable String depotCode) {
         depotService.delete(depotCode);
     }

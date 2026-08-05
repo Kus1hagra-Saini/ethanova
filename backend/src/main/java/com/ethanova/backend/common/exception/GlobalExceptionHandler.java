@@ -64,23 +64,26 @@ public class GlobalExceptionHandler {
         return ResponseEntity.badRequest().body(body);
     }
     /**
-     * 400 — Path variable or query parameter cannot be converted to the target type.
-     * Most common cause: an invalid enum literal (e.g. /grade/FOO where FOO is not
-     * a valid {@code EthanolGrade}). Returned as a targeted 400 rather than 500.
+     * 400 — Request body could not be read or parsed (typically malformed JSON).
+     * Common cause: syntax errors, missing quotes, or a body that doesn't match
+     * the expected content type. Distinct from field-level validation failures,
+     * which are handled by {@link #handleValidation}.
      */
-    @ExceptionHandler(org.springframework.web.method.annotation.MethodArgumentTypeMismatchException.class)
-    public ResponseEntity<ApiError> handleTypeMismatch(
-            org.springframework.web.method.annotation.MethodArgumentTypeMismatchException ex,
+    @ExceptionHandler(org.springframework.http.converter.HttpMessageNotReadableException.class)
+    public ResponseEntity<ApiError> handleUnreadableBody(
+            org.springframework.http.converter.HttpMessageNotReadableException ex,
             HttpServletRequest request) {
 
-        String requiredType = ex.getRequiredType() != null ? ex.getRequiredType().getSimpleName() : "unknown";
-        String message = "Parameter '%s' has invalid value '%s'; expected type %s"
-                .formatted(ex.getName(), ex.getValue(), requiredType);
+        // Root cause message is more useful than the wrapper's, but be defensive.
+        Throwable root = ex.getMostSpecificCause();
+        String detail = (root != null && root.getMessage() != null)
+                ? root.getMessage()
+                : "Request body is not readable";
 
         ApiError body = ApiError.of(
                 HttpStatus.BAD_REQUEST.value(),
                 HttpStatus.BAD_REQUEST.getReasonPhrase(),
-                message,
+                "Malformed request body: " + detail,
                 request.getRequestURI());
         return ResponseEntity.badRequest().body(body);
     }
@@ -106,6 +109,38 @@ public class GlobalExceptionHandler {
      * 500 — Catch-all for unexpected exceptions.
      * Message is sanitised: the raw exception text is logged, never returned.
      */
+    /**
+     * Handles {@link org.springframework.web.server.ResponseStatusException}
+     * thrown by services to signal a specific HTTP status with a domain message
+     * (e.g. invalid status transition → 409, integrity rule failure → 400).
+     *
+     * <p>Placed above the generic {@link Exception} handler because
+     * {@code @RestControllerAdvice} handlers are matched most-specific-first
+     * only when each candidate is declared. Without this method, the generic
+     * handler swallows {@code ResponseStatusException} and returns 500,
+     * discarding the intended status.
+     */
+    @ExceptionHandler(org.springframework.web.server.ResponseStatusException.class)
+    public ResponseEntity<ApiError> handleResponseStatus(
+            org.springframework.web.server.ResponseStatusException ex,
+            HttpServletRequest request) {
+
+        HttpStatus status = HttpStatus.resolve(ex.getStatusCode().value());
+        if (status == null) {
+            status = HttpStatus.INTERNAL_SERVER_ERROR;
+        }
+
+        // ex.getReason() is the message the service passed in; fall back to the
+        // status's reason phrase (e.g. "Bad Request") if none was supplied.
+        String message = ex.getReason() != null ? ex.getReason() : status.getReasonPhrase();
+
+        ApiError body = ApiError.of(
+                status.value(),
+                status.getReasonPhrase(),
+                message,
+                request.getRequestURI());
+        return ResponseEntity.status(status).body(body);
+    }
     @ExceptionHandler(Exception.class)
     public ResponseEntity<ApiError> handleGeneric(Exception ex, HttpServletRequest request) {
         log.error("Unhandled exception at {}", request.getRequestURI(), ex);
