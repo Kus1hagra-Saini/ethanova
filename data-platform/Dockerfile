@@ -29,5 +29,5 @@ USER airflow
 
 COPY requirements-airflow.txt /requirements-airflow.txt
 
-RUN pip install --no-cache-dir --user -r /requirements-airflow.txt \
+RUN pip install --no-cache-dir -r /requirements-airflow.txt \
     --constraint "https://raw.githubusercontent.com/apache/airflow/constraints-${AIRFLOW_VERSION}/constraints-${PYTHON_VERSION}.txt"

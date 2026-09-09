@@ -1,5 +1,64 @@
 name: ethanova
 
+# =============================================================================
+# Shared Airflow configuration
+# =============================================================================
+# Broken into two anchors:
+#   x-airflow-env    — environment variables shared by every Airflow service
+#   x-airflow-common — the rest of the service template (image, volumes, etc.)
+# airflow-init needs to add TWO extra env vars on top of the shared set, which
+# the YAML merge key (<<:) supports on mappings but not on sequences — hence
+# the separate env anchor.
+# =============================================================================
+
+x-airflow-env: &airflow-env
+  AIRFLOW__CORE__EXECUTOR: LocalExecutor
+  AIRFLOW__CORE__LOAD_EXAMPLES: "false"
+  AIRFLOW__CORE__FERNET_KEY: ${AIRFLOW_FERNET_KEY:?AIRFLOW_FERNET_KEY must be set in deployment/.env}
+  AIRFLOW__CORE__DAGS_ARE_PAUSED_AT_CREATION: "true"
+  AIRFLOW__CORE__PARALLELISM: "8"
+  AIRFLOW__CORE__DAG_CONCURRENCY: "4"
+
+  # Metadata DB — reuses the ethanova-postgres container, separate database
+  AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://${POSTGRES_USER:-ethanova}:${POSTGRES_PASSWORD:-ethanova_dev_pw}@postgres:5432/airflow
+
+  # Webserver — reuses the Fernet key as its Flask secret. For a review demo
+  # this is acceptable; a production deploy would use a distinct secret.
+  AIRFLOW__WEBSERVER__EXPOSE_CONFIG: "false"
+  AIRFLOW__WEBSERVER__SECRET_KEY: ${AIRFLOW_FERNET_KEY:?AIRFLOW_FERNET_KEY must be set in deployment/.env}
+
+  # Scheduler
+  AIRFLOW__SCHEDULER__MIN_FILE_PROCESS_INTERVAL: "30"
+
+  # Logging
+  AIRFLOW__LOGGING__LOGGING_LEVEL: INFO
+
+  # Dependencies are baked into the image (data-platform/requirements-airflow.txt)
+  # — explicitly disable the base image's runtime-install behaviour.
+  _PIP_ADDITIONAL_REQUIREMENTS: ""
+
+x-airflow-common: &airflow-common
+  build:
+    context: ../data-platform
+    dockerfile: Dockerfile
+  image: ethanova/airflow:2.10.5
+  environment: *airflow-env
+  user: "${AIRFLOW_UID:-50000}:0"
+  volumes:
+    - ../data-platform/dags:/opt/airflow/dags:ro
+    - ../data-platform/plugins:/opt/airflow/plugins:ro
+    - ../data-platform/config:/opt/airflow/config:ro
+    - ../data-platform/logs:/opt/airflow/logs
+  networks:
+    - ethanova-net
+  depends_on:
+    postgres:
+      condition: service_healthy
+
+# =============================================================================
+# Services
+# =============================================================================
+
 services:
   postgres:
     image: postgres:16-alpine
@@ -22,6 +81,81 @@ services:
       start_period: 10s
     networks:
       - ethanova-net
+
+  # ---------------------------------------------------------------------------
+  # Airflow — one-shot initialiser
+  # ---------------------------------------------------------------------------
+  # Runs `airflow db migrate` against the airflow database (created by
+  # deployment/postgres/init/02-airflow-database.sql, or via the manual
+  # docker exec in M5.1), then creates the admin user. Exits 0 on success;
+  # webserver and scheduler wait on this via service_completed_successfully.
+  # ---------------------------------------------------------------------------
+  airflow-init:
+    <<: *airflow-common
+    container_name: ethanova-airflow-init
+    environment:
+      <<: *airflow-env
+      _AIRFLOW_WWW_USER_USERNAME: ${_AIRFLOW_WWW_USER_USERNAME:-airflow}
+      _AIRFLOW_WWW_USER_PASSWORD: ${_AIRFLOW_WWW_USER_PASSWORD:-airflow}
+    command:
+      - bash
+      - -c
+      - |
+        set -euo pipefail
+        echo "Running airflow db migrate…"
+        airflow db migrate
+        echo "Creating admin user (idempotent — ignore 'user already exists')…"
+        airflow users create \
+          --username "$${_AIRFLOW_WWW_USER_USERNAME}" \
+          --password "$${_AIRFLOW_WWW_USER_PASSWORD}" \
+          --firstname Airflow \
+          --lastname Admin \
+          --role Admin \
+          --email admin@ethanova.local || true
+        echo "airflow-init complete."
+    restart: "no"
+
+  # ---------------------------------------------------------------------------
+  # Airflow — webserver (UI on http://localhost:8081)
+  # ---------------------------------------------------------------------------
+  airflow-webserver:
+    <<: *airflow-common
+    container_name: ethanova-airflow-webserver
+    command: webserver
+    ports:
+      - "8081:8080"
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      airflow-init:
+        condition: service_completed_successfully
+
+  # ---------------------------------------------------------------------------
+  # Airflow — scheduler (parses DAGs, dispatches tasks under LocalExecutor)
+  # ---------------------------------------------------------------------------
+  airflow-scheduler:
+    <<: *airflow-common
+    container_name: ethanova-airflow-scheduler
+    command: scheduler
+    healthcheck:
+      test: ["CMD-SHELL", 'airflow jobs check --job-type SchedulerJob --hostname "$${HOSTNAME}"']
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      airflow-init:
+        condition: service_completed_successfully
 
 volumes:
   postgres_data:
