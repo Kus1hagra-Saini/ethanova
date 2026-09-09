@@ -17,7 +17,7 @@ x-airflow-env: &airflow-env
   AIRFLOW__CORE__FERNET_KEY: ${AIRFLOW_FERNET_KEY:?AIRFLOW_FERNET_KEY must be set in deployment/.env}
   AIRFLOW__CORE__DAGS_ARE_PAUSED_AT_CREATION: "true"
   AIRFLOW__CORE__PARALLELISM: "8"
-  AIRFLOW__CORE__DAG_CONCURRENCY: "4"
+  AIRFLOW__CORE__MAX_ACTIVE_TASKS_PER_DAG: "4"
 
   # Metadata DB — reuses the ethanova-postgres container, separate database
   AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://${POSTGRES_USER:-ethanova}:${POSTGRES_PASSWORD:-ethanova_dev_pw}@postgres:5432/airflow
@@ -36,6 +36,11 @@ x-airflow-env: &airflow-env
   # Dependencies are baked into the image (data-platform/requirements-airflow.txt)
   # — explicitly disable the base image's runtime-install behaviour.
   _PIP_ADDITIONAL_REQUIREMENTS: ""
+    # Auto-created on first boot as Airflow connection `postgres_ethanova`.
+  # Used by PostgresHook in Bronze/Silver/Gold DAGs. Note the scheme: Airflow's
+  # AIRFLOW_CONN_* URI format uses the connection *type* (postgres) as the
+  # scheme, not the SQLAlchemy dialect (postgresql+psycopg2).
+  AIRFLOW_CONN_POSTGRES_ETHANOVA: postgres://${POSTGRES_USER:-ethanova}:${POSTGRES_PASSWORD:-ethanova_dev_pw}@postgres:5432/ethanova
 
 x-airflow-common: &airflow-common
   build:
