@@ -6,3 +6,7 @@ __pycache__/
 build/
 dist/
 forecast_by_depot.png
+
+# Power BI Desktop caches
+*.pbix.bak
+.pbi/
