@@ -1,0 +1,27 @@
+# =============================================================================
+# Ethanova Airflow image — additional Python dependencies
+# =============================================================================
+# Every listed package is resolved through Apache Airflow's official constraints
+# file for release 2.10.5 on Python 3.11:
+#
+#   https://raw.githubusercontent.com/apache/airflow/constraints-2.10.5/constraints-3.11.txt
+#
+# The constraints file pins each package (and every transitive dependency) to
+# the exact version the Airflow team tested for this release. The specifiers
+# below are floors and compatibility gates — the resolved pin comes from the
+# constraints file, applied via --constraint in the Dockerfile.
+# =============================================================================
+
+# Postgres provider — required by PostgresHook.
+# The 5.x line requires apache-airflow>=2.7, satisfied by our 2.10.5.
+# The 6.x line requires apache-airflow>=2.11 and is therefore excluded.
+apache-airflow-providers-postgres>=5.10.0,<6.0.0
+
+# psycopg2-binary is a transitive dependency of the Postgres provider, but we
+# pin it explicitly so Bronze/Silver/Gold code can import it directly without
+# relying on an implicit dependency chain.
+psycopg2-binary>=2.9.9,<3.0.0
+
+# DataFrame libraries used by upcoming pipeline DAGs (Bronze/Silver/Gold).
+pandas>=2.0,<3.0
+numpy>=1.26,<2.0

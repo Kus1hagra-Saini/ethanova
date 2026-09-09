@@ -1,0 +1,23 @@
+# Airflow task logs — high churn, never committed
+logs/*
+!logs/.gitkeep
+
+# Python bytecode
+__pycache__/
+*.pyc
+*.pyo
+
+# Local build artifacts
+*.egg-info/
+build/
+dist/
+
+# Airflow local state (in case airflow is ever invoked outside Docker)
+.airflow/
+airflow.db
+airflow-webserver.pid
+webserver_config.py
+
+# Any keys or secrets accidentally dropped into config/
+config/*.key
+config/secrets.*
