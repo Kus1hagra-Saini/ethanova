@@ -1,7 +1,7 @@
 # PROJECT_STATE.md
 
 **Ethanova — Canonical Project State Document**
-*Last updated: 8 September 2026*
+*Last updated: 9 September 2026*
 *Purpose: Single source of truth for the Ethanova project. Any new chat session or engineer can pick up from this document alone.*
 
 ---
@@ -25,7 +25,7 @@
 |---|---|---|
 | Zeroth | 21–24 Jul 2026 | ✅ Completed |
 | First | 18–21 Aug 2026 | ⚠️ Missed |
-| **Second** | **8–11 Sep 2026** | **Current target — 9 Sep** |
+| **Second** | **8–11 Sep 2026** | **In progress — Review 2 today (9 Sep)** |
 | Third | 29 Sep – 2 Oct 2026 | Not started |
 
 ---
@@ -77,7 +77,16 @@ ethanova/
 │   │       └── V003__create_depot_weekly_consumption.sql
 │   ├── pom.xml
 │   └── mvnw.cmd, .mvn/, etc.
-├── data-platform/                        # empty — awaiting Airflow scaffold (Milestone 5)
+├── data-platform/                        # Apache Airflow 2.10.5 orchestration (M5) ✅
+│   ├── Dockerfile                        # extends apache/airflow:2.10.5-python3.11
+│   ├── requirements-airflow.txt          # Postgres provider, psycopg2, pandas, numpy
+│   ├── README.md
+│   ├── .gitignore
+│   ├── dags/
+│   │   └── 00_hello_ethanova.py          # smoke DAG (M5.5)
+│   ├── plugins/                          # empty
+│   ├── config/                           # empty
+│   └── logs/                             # gitignored
 ├── simulator/                            # Python 3.11 historical data simulator (M4) ✅
 │   ├── pyproject.toml
 │   ├── README.md
@@ -93,7 +102,9 @@ ethanova/
 │   ├── docker-compose.yml                # PostgreSQL 16-alpine service
 │   ├── .env.example
 │   ├── .env                              # gitignored
-│   └── postgres/init/01-schemas.sql      # creates operational/bronze/silver/gold on first init
+│   └── postgres/init/
+│       ├── 01-schemas.sql                # creates operational/bronze/silver/gold on first init
+│       └── 02-airflow-database.sql       # creates airflow metadata database on first init (M5.1)
 ├── docs/                                 # PROJECT_STATE.md + future reviews/
 ├── scripts/                              # empty
 ├── .gitignore
@@ -169,6 +180,30 @@ Delivered on `feature/data-platform-m4` (two atomic commits landed; the accompan
 
 **Backend application code was not modified during M4.** The REST API remains the live write path for operational events; the simulator writes historical rows directly for pragmatic reasons — see §9 ADR #36 for the split-of-concerns rationale.
 
+### Milestone 5 — Airflow Orchestration Stack (9 Sep 2026)
+
+Delivered on `feature/data-platform-m5` across six atomic commits. Purpose: stand up Apache Airflow 2.10.5 in Docker Compose with a working connection to the operational database, so Bronze/Silver/Gold DAGs (M6+) have a running orchestrator to land on. Backend code untouched.
+
+**M5.1 — Airflow metadata database.** `deployment/postgres/init/02-airflow-database.sql` creates the `airflow` database on fresh Postgres volumes, idempotently via `\gexec`, owned by the `ethanova` role. For the existing volume the same script was executed once via `docker exec`. Preserves ADR #12 (single Postgres instance) — no new user, no new server.
+
+**M5.2 — data-platform scaffold.** `data-platform/` src tree: `Dockerfile` extending `apache/airflow:2.10.5-python3.11`, `requirements-airflow.txt` (Postgres provider, psycopg2-binary, pandas, numpy), `README.md`, `.gitignore`, and empty `dags/` / `plugins/` / `config/` / `logs/` directories with `.gitkeep` sentinels. Every dependency resolved through Airflow's official constraints file `constraints-2.10.5/constraints-3.11.txt` — reproducible install per ADR #8.
+
+**M5.3 — Airflow services in Compose.** `deployment/docker-compose.yml` extended with three services: `airflow-init` (one-shot: `airflow db migrate` + admin user create), `airflow-webserver` (UI on host port 8081 — Spring Boot owns 8080), `airflow-scheduler` (LocalExecutor). Two YAML anchors — `x-airflow-env` and `x-airflow-common` — share environment and volumes across all three. Fernet key, admin credentials, and `AIRFLOW_UID` sourced from `deployment/.env` (gitignored); required variables guarded with `${VAR:?msg}` so a missing `.env` fails at parse time with a clear message. Postgres healthcheck (already present since M1) is what the Airflow services wait on. Two M5.2 defects were fixed in the same commit: Dockerfile `pip install --user` removed (incompatible with the base image's virtualenv), and `apache-airflow-providers-postgres` upper bound widened from `<6.0.0` to `<6.5.0` to match the constraints-file pin at 6.0.0.
+
+**M5.4 — Ethanova connection wired.** `AIRFLOW_CONN_POSTGRES_ETHANOVA` env var added to `x-airflow-env` so all three Airflow services auto-register the `postgres_ethanova` connection on first boot, pointing at the `ethanova` database over the compose network. URI uses Airflow's env-var format (scheme is the connection type `postgres`, not the SQLAlchemy dialect `postgresql+psycopg2`). Also renamed `AIRFLOW__CORE__DAG_CONCURRENCY` to `AIRFLOW__CORE__MAX_ACTIVE_TASKS_PER_DAG` to eliminate a per-tick deprecation warning that would drown out real errors once DAGs run.
+
+**M5.5 — Smoke DAG.** `data-platform/dags/00_hello_ethanova.py`: one `PythonOperator` running `SELECT COUNT(*) FROM operational.depot_weekly_consumption` via `PostgresHook(postgres_conn_id="postgres_ethanova")`. Manual trigger only (`schedule=None`), `catchup=False`, `retries=0`. Fails loudly if the count is not positive. DAG-id prefix `00_` keeps it at the top of the UI; Bronze/Silver/Gold will use `10_`/`20_`/`30_`. Also serves as the template for those upcoming DAGs.
+
+**Verified end-to-end** (M5 acceptance criteria all green):
+- `docker compose ps` shows postgres + webserver + scheduler `Up (healthy)`; `airflow-init` `Exited (0)`.
+- Airflow UI reachable at `http://localhost:8081`; login `airflow`/`airflow`.
+- `airflow db migrate` created ~30 metadata tables in the `airflow` database.
+- Smoke DAG parses without import errors, unpauses, manual trigger runs to `success`.
+- Task log shows `Consumption row count: 520` — the M4 simulator data — proving the whole chain works from **inside a scheduled DAG run**, not just an ad-hoc `docker exec`.
+- No deprecation warnings in scheduler logs after the `dag_concurrency` rename.
+
+**Backend application code was not modified during M5.** M5 introduces one locked architectural decision — see §9 ADR #37.
+
 ---
 
 ## 5. Current Backend Status
@@ -190,9 +225,9 @@ Delivered on `feature/data-platform-m4` (two atomic commits landed; the accompan
 | Security / JWT | ⏳ Not started | Permissive `SecurityConfig` for Review 1; JWT deferred to Phase 2 |
 | **`depot_weekly_consumption` table** | ✅ **Complete** | Added by V003; 520 rows after simulator run — weekly demand signal for the forecast pipeline |
 | **Historical data simulator** | ✅ **Complete** | Python 3.11 project under `simulator/`; 104 weeks of history + ~1,300 dispatch orders; direct SQLAlchemy writes |
-| Airflow project | ⏳ Not started | Milestone 5 (next) |
-| Bronze / Silver / Gold DAGs | ⏳ Not started | Milestone 6+ |
-| ML baseline forecast | ⏳ Not started | Post-Airflow milestone |
+| **Airflow orchestration stack** | ✅ **Complete** | Airflow 2.10.5, LocalExecutor, UI on :8081, `postgres_ethanova` connection auto-registered, smoke DAG green |
+| Bronze / Silver / Gold DAGs | ⏳ Not started | Milestone 6+ (next) |
+| ML baseline forecast | ⏳ Not started | Post-Gold milestone |
 | Power BI dashboard | ⏳ Not started | Post-forecast milestone |
 
 **Endpoint inventory as of Milestone 3 completion:**
@@ -236,6 +271,12 @@ Delivered on `feature/data-platform-m4` (two atomic commits landed; the accompan
 | `V002__seed_reference_data.sql` | Reference data | Applied |
 | `V003__create_depot_weekly_consumption.sql` | Weekly demand-signal table; one row per (depot, ISO week) | Applied |
 
+**Additional container init script** (runs once, on fresh Postgres volume — orthogonal to Flyway):
+
+| File | Purpose | Status |
+|---|---|---|
+| `deployment/postgres/init/02-airflow-database.sql` | Creates the `airflow` metadata database owned by `ethanova`, idempotently via `\gexec` | Applied to existing volume via `docker exec` (M5.1) |
+
 **Tables in `operational` schema (post-M4):**
 
 | Table | Rows | Notes |
@@ -248,6 +289,14 @@ Delivered on `feature/data-platform-m4` (two atomic commits landed; the accompan
 | `inventory` | 5 | One row per depot × ANHYDROUS grade. Simulator does **not** write to this table — inventory is state, not event history |
 | `depot_weekly_consumption` | 520 after simulator run | One row per (depot, ISO week); demand signal for the forecast pipeline; `data_source = 'SIMULATOR'` |
 | `flyway_schema_history` | 3 | V001, V002, V003 applied |
+
+**Databases in the Postgres 16 instance:**
+
+| Database | Owner | Purpose |
+|---|---|---|
+| `ethanova` | `ethanova` | Operational + warehouse schemas (`operational`, `bronze`, `silver`, `gold`) — Flyway-managed |
+| `airflow` | `ethanova` | Airflow 2.10.5 metadata database — ~30 tables managed by `airflow db migrate` |
+| `postgres` | `postgres` | Maintenance DB, standard Postgres default |
 
 ---
 
@@ -275,14 +324,26 @@ Delivered on `feature/data-platform-m4` (two atomic commits landed; the accompan
 
 The last commit is a consolidated final commit covering Supplier CRUD, Dispatch Order, additional exception handlers, and the SpringDoc pass — a granularity trade-off consciously accepted (§10 rule 5).
 
-**Current branch — Milestone 4 (unmerged):**
+**Milestone 4 completed and merged into `main` (PR #5):**
 
-Branch: `feature/data-platform-m4`, forked from `main` at `c0352b0` (the merge commit of PR #4). Two atomic commits landed so far, not yet pushed to a PR:
+| Commit | Message |
+|---|---|
+| `911fdc2` | `feat(backend): add V003 migration for depot_weekly_consumption` |
+| `bc167fb` | `feat(simulator): scaffold historical data simulator (M4)` |
+| `0d26904` | `docs: update PROJECT_STATE for Milestone 4 completion` |
 
-1. `911fdc2` — `feat(backend): add V003 migration for depot_weekly_consumption`
-2. `bc167fb` — `feat(simulator): scaffold historical data simulator (M4)`
+Merged as `597f657` — `main` now includes M4.
 
-A third commit updating this PROJECT_STATE.md file for M4 completion is pending review at time of writing; it will be added and the branch pushed once the doc changes are approved. `main` still points at `c0352b0`; no M4 work has been merged.
+**Current branch — Milestone 5 (unmerged at time of writing):**
+
+Branch: `feature/data-platform-m5`, forked from `main` at `597f657` (PR #5 merge). Six atomic commits:
+
+1. `381a0f7` — `feat(deployment): provision Airflow metadata database (M5.1)`
+2. `725108f` — `feat(data-platform): scaffold Airflow project structure (M5.2)`
+3. `ea0f5a2` — `feat(deployment): add Airflow services to Compose (M5.3)`
+4. `0b8b083` — `feat(deployment): wire postgres_ethanova connection (M5.4)`
+5. `64a2765` — `feat(data-platform): add smoke DAG for Airflow ↔ operational connectivity (M5.5)`
+6. Pending — `docs: update PROJECT_STATE for Milestone 5 completion` (this file)
 
 **Conventions:**
 - Commit messages follow Conventional Commits: `type(scope): summary` + body bullets
@@ -300,24 +361,23 @@ Review 1 was missed; Review 2 is tomorrow. Historical dataset (M4) is now in pla
 ### Already delivered (referenced here so the plan reads honestly)
 
 - ✅ Operational REST API + OpenAPI (M3, merged in #4).
-- ✅ Historical data simulator + V003 demand-signal table (M4, current branch).
-- ✅ 520 weekly consumption rows and ~1,300 dispatch orders now sitting in `operational`, ready for extraction.
+- ✅ Historical data simulator + V003 demand-signal table (M4, merged in #5).
+- ✅ 520 weekly consumption rows and ~1,290 dispatch orders now sitting in `operational`, ready for extraction.
+- ✅ Airflow 2.10.5 stack running in Docker Compose (M5, current branch): webserver on `:8081`, scheduler healthy, `postgres_ethanova` connection wired, smoke DAG green.
 
 ### Tier 1 — Must-have for Review 2 demo
 
-1. **[Data platform] Airflow in Docker Compose** — Extend `deployment/docker-compose.yml` with Airflow 2.10, LocalExecutor, webserver on port 8081. Reuse the existing Postgres container for Airflow metadata via a separate database. Bind-mount `data-platform/dags/`. **Milestone 5 (next).** Hard timebox: 4h. Venv fallback pre-approved if Docker Airflow becomes a blocker.
+1. **[Pipeline] Bronze DAG — `10_extract_operational_to_bronze`** — Reads `dispatch_orders`, `inventory`, and `depot_weekly_consumption` from `operational` using an `updated_at` watermark; writes to `bronze.dispatch_orders_raw`, `bronze.inventory_snapshot_raw`, `bronze.depot_consumption_raw` with an `_ingested_at` timestamp. **Milestone 6 (next).**
 
-2. **[Pipeline] Bronze DAG — `extract_operational_to_bronze`** — Reads `dispatch_orders`, `inventory`, and `depot_weekly_consumption` from `operational` using an `updated_at` watermark; writes to `bronze.dispatch_orders_raw`, `bronze.inventory_snapshot_raw`, `bronze.depot_consumption_raw` with an `_ingested_at` timestamp. **Milestone 6.**
+2. **[Pipeline] Silver DAG — `20_bronze_to_silver`** — Deduplicate, type-cast, join with dimensions, add data-quality flags. Produces `silver.dispatch_orders_clean` and `silver.depot_weekly_demand`. Simulator's ~3% supply-shortfall weeks provide real DQ signal to flag. **Milestone 7.**
 
-3. **[Pipeline] Silver DAG — `bronze_to_silver`** — Deduplicate, type-cast, join with dimensions, add data-quality flags. Produces `silver.dispatch_orders_clean` and `silver.depot_weekly_demand`. Simulator's ~3% supply-shortfall weeks provide real DQ signal to flag. **Milestone 7.**
+3. **[Pipeline] Gold DAG — `30_silver_to_gold`** — Star-schema-lite: `dim_depot`, `dim_supplier`, `dim_date`, `fact_weekly_ethanol_demand`, `fact_weekly_dispatched_volume`. Weekly grain, ready for BI and ML. **Milestone 8.**
 
-4. **[Pipeline] Gold DAG — `silver_to_gold`** — Star-schema-lite: `dim_depot`, `dim_supplier`, `dim_date`, `fact_weekly_ethanol_demand`, `fact_weekly_dispatched_volume`. Weekly grain, ready for BI and ML. **Milestone 8.**
+4. **[ML] Baseline forecast** — Notebook under `analytics/notebooks/` reading `gold.fact_weekly_ethanol_demand`. Time-based train/test split with last 8 weeks held out per depot. Two models: seasonal-naive (same week last year) and Ridge regression on lag + week-of-year features. Metrics per depot: MAE, MAPE. Save per-depot forecasts to `gold.forecast_weekly`. **Milestone 9.**
 
-5. **[ML] Baseline forecast** — Notebook under `analytics/notebooks/` reading `gold.fact_weekly_ethanol_demand`. Time-based train/test split with last 8 weeks held out per depot. Two models: seasonal-naive (same week last year) and Ridge regression on lag + week-of-year features. Metrics per depot: MAE, MAPE. Save per-depot forecasts to `gold.forecast_weekly`. **Milestone 9.**
+5. **[Decision] Rule-based recommendation output** — `gold.recommendation_weekly` populated by SQL view or Python step: `depot × grade × next_week` → `recommended_order_kl`, `chosen_supplier_code`, `rationale`. Formula: `forecast_next_week - opening_inventory + safety_stock`; supplier chosen by cheapest active supplier with capacity. Consistent with §9 ADR #16 (rule-based, not ML policy). **Milestone 10.**
 
-6. **[Decision] Rule-based recommendation output** — `gold.recommendation_weekly` populated by SQL view or Python step: `depot × grade × next_week` → `recommended_order_kl`, `chosen_supplier_code`, `rationale`. Formula: `forecast_next_week - opening_inventory + safety_stock`; supplier chosen by cheapest active supplier with capacity. Consistent with §9 ADR #16 (rule-based, not ML policy). **Milestone 10.**
-
-7. **[Docs] Review 2 presentation deck** — 12–15 slides: architecture as-built, medallion story, Airflow screenshots, sample Bronze/Silver/Gold rows, forecast plots, recommendation table, honest limitations slide. **Milestone 12.**
+6. **[Docs] Review 2 presentation deck** — 12–15 slides: architecture as-built, medallion story, Airflow screenshots, sample Bronze/Silver/Gold rows, forecast plots, recommendation table, honest limitations slide. **Milestone 12.**
 
 ### Tier 2 — Nice-to-have, adds credibility if time permits
 
@@ -379,6 +439,7 @@ Locked decisions. Do not re-open without explicit instruction from Kushagra.
 | **34** | **PUT (not PATCH) for dispatch-order status transitions, for Review 1** | Simpler surface for demo and viva; PATCH is a defensible refinement post-Review 1 |
 | **35** | **Cross-field validation lives in services, not on DTOs** | Bean Validation's `@AssertTrue` on records is awkward and couples the DTO to business rules; imperative checks in the service are clearer |
 | **36** | **Weekly demand signal lives in `operational.depot_weekly_consumption` as a first-class table, not derived downstream** | Forecasting off historical dispatch decisions would be circular — dispatches are the supply-side response, not the demand signal. An explicit demand table (petrol dispensed × blend target) gives Silver/Gold a clean, provenance-tracked target column via `ethanol_required_kl`. The row *is* the aggregate; the simulator populates it today, a real OMC feed populates it tomorrow, without pipeline changes. The `data_source` column carries provenance for downstream filtering. Corollary: the simulator writes historical rows directly via SQLAlchemy, not through the REST API — historical seeding is a separate concern from the live write path |
+| **37** | **Airflow-to-operational connection defined via `AIRFLOW_CONN_*` env var in Compose, not via UI clicks or a bootstrap DAG** | The connection is infrastructure, not runtime state. Defining it in `deployment/docker-compose.yml` means every fresh clone gets the same connection auto-registered on first `docker compose up`, the secret stays in `.env` (gitignored), and there is no ad-hoc "run this DAG once to seed connections" step. Env-var connections are ephemeral by design — they never touch the metadata DB, so they do not appear in `airflow connections list` or Admin → Connections. Hook-level testing (PostgresHook returning the expected row) is authoritative. URI scheme is the connection type (`postgres`), not the SQLAlchemy dialect (`postgresql+psycopg2`) — a well-known Airflow foot-gun that the compose comment explicitly names |
 
 ---
 
@@ -390,7 +451,7 @@ Non-negotiable operating principles for any chat session continuing this project
 
 2. **Always continue from PROJECT_STATE.md.** This document is the source of truth. Chat history is not. Read this file at the start of every session.
 
-3. **Ask before making major architectural changes.** The 36 locked decisions in §9 are frozen. If a session recommends changing any of them, halt and ask Kushagra first.
+3. **Ask before making major architectural changes.** The 37 locked decisions in §9 are frozen. If a session recommends changing any of them, halt and ask Kushagra first.
 
 4. **Keep implementation enterprise-grade but avoid unnecessary complexity.** No microservices, no Kafka, no cloud, no premature abstractions. Every class must earn its place in Review 1.
 
@@ -446,6 +507,15 @@ Explicitly deferred with rationale. Not to be revived without Kushagra's approva
 - **Blend policy as a 10% → 20% ramp, not a locked 20%.** Reflects the actual E20 rollout and gives the baseline forecaster a genuine non-seasonal trend to decompose — a stronger viva story than a flat target with pure seasonality.
 - **Direct SQLAlchemy writes are the right choice for historical seeding.** Routing 1,300 orders through the REST API would triple the time budget for zero architectural gain. The live write path remains REST; historical seeding is a distinct concern. Codified as ADR #36.
 - **Single `numpy.random.default_rng(seed)` threaded through both generators.** Determinism requires *one* RNG instance; leaking to the global `random` module would break reproducibility silently.
+
+**Milestone 5 highlights (kept as learning artefacts):**
+
+- **`pip install --user` fails inside the official Airflow image.** The 2.10.5 base image runs pip from inside a virtualenv, and pip refuses `--user` in that mode. Installing into the virtualenv is the documented extension pattern. Discovered during first M5.3 build.
+- **`apache-airflow-providers-postgres` version bounds are non-obvious.** Provider 5.x supports Airflow 2.7+. Provider 6.0.0 through 6.4.x support 2.9+. Provider 6.5.0+ jumps to 2.11+. The Airflow 2.10.5 constraints file pins the provider to exactly 6.0.0. Verified against PyPI package metadata before widening our upper bound from `<6.0.0` to `<6.5.0`. This is the same ADR #8 pattern that surfaced with Flyway (ADR #18) and SpringDoc (ADR #24) — always verify version claims against primary sources.
+- **Docker Desktop's Resources memory slider is ignored when the WSL2 backend is active.** The real memory ceiling comes from `%USERPROFILE%\.wslconfig` and only takes effect after `wsl --shutdown`. Explicitly set `memory=10GB` there; `docker info` then reports ~9.72 GB (WSL2 keeps ~5% for kernel overhead).
+- **Airflow env-var connection URIs use `postgres://`, not `postgresql+psycopg2://`.** Two URI conventions coexist inside Airflow: SQLAlchemy dialect for the metadata DB, connection type for `AIRFLOW_CONN_*` env vars. Getting this wrong silently creates a "connection is there but doesn't work" state. Documented in ADR #37 and in the compose file comment.
+- **`airflow connections list` will not show env-var connections** — they are ephemeral by design, never persisted to the metadata DB. PostgresHook success is the authoritative test. Anyone reviewing the UI expecting to see the row will be confused; the ADR explains why.
+- **Rename `AIRFLOW__CORE__DAG_CONCURRENCY` → `AIRFLOW__CORE__MAX_ACTIVE_TASKS_PER_DAG` immediately.** The old name still works but emits a `DeprecationWarning` on every CLI call and every scheduler tick. Left in place, that warning would drown out real errors once DAGs start running. One-line change; do it now.
 
 ---
 
